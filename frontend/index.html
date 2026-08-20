@@ -1,0 +1,524 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Live Pose Estimation</title>
+<style>
+  :root {
+    --bg: #0b0d12;
+    --panel: #12151c;
+    --panel-2: #191d27;
+    --border: #262b38;
+    --text: #e7e9ee;
+    --muted: #8b93a7;
+    --accent: #5eead4;
+    --accent-2: #7c9dff;
+    --danger: #ff6b6b;
+    --ok: #6be675;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  header {
+    padding: 18px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  header h1 {
+    font-size: 18px;
+    margin: 0;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+  }
+  header h1 span { color: var(--accent); }
+  .status-pill {
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    color: var(--muted);
+  }
+  .status-pill.connected { color: var(--ok); border-color: rgba(107,230,117,0.35); }
+  .status-pill.disconnected { color: var(--danger); border-color: rgba(255,107,107,0.35); }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: 20px;
+    padding: 20px 24px 40px;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; }
+  }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 16px;
+  }
+  .panel + .panel { margin-top: 16px; }
+  .panel h2 {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    margin: 0 0 12px;
+  }
+
+  .seg {
+    display: flex;
+    background: var(--panel-2);
+    border-radius: 10px;
+    padding: 4px;
+    gap: 4px;
+    border: 1px solid var(--border);
+  }
+  .seg button {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    padding: 8px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+  }
+  .seg button.active { background: var(--accent); color: #06110f; }
+
+  label.field {
+    display: block;
+    font-size: 12px;
+    color: var(--muted);
+    margin: 14px 0 6px;
+  }
+  input[type="text"], select {
+    width: 100%;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 9px 10px;
+    border-radius: 8px;
+    font-size: 13px;
+  }
+  input[type="range"] { width: 100%; }
+
+  .row { display: flex; gap: 8px; }
+  .row > * { flex: 1; }
+
+  button.primary, button.secondary {
+    margin-top: 14px;
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: 9px;
+    border: none;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button.primary { background: var(--accent); color: #06110f; }
+  button.primary:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.secondary { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); }
+
+  .hint { font-size: 11.5px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
+
+  .stage {
+    position: relative;
+    background: #000;
+    border-radius: 14px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    aspect-ratio: 4 / 3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .stage video, .stage img, .stage canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+  .stage .placeholder {
+    color: var(--muted);
+    font-size: 14px;
+    text-align: center;
+    padding: 20px;
+    z-index: 0;
+  }
+
+  .hud {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    display: flex;
+    gap: 8px;
+    z-index: 5;
+  }
+  .hud .chip {
+    background: rgba(0,0,0,0.55);
+    backdrop-filter: blur(4px);
+    border-radius: 999px;
+    padding: 5px 10px;
+    font-size: 11.5px;
+    color: var(--text);
+    border: 1px solid rgba(255,255,255,0.08);
+  }
+  .hud .chip b { color: var(--accent); }
+
+  .kv { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-top: 6px;}
+  .kv b { color: var(--text); font-weight: 600; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Live Pose <span>Estimation</span></h1>
+  <div id="statusPill" class="status-pill disconnected">disconnected</div>
+</header>
+
+<div class="layout">
+  <div>
+    <div class="panel">
+      <h2>Camera Source</h2>
+      <div class="seg">
+        <button id="tabWebcam" class="active">Built-in / USB</button>
+        <button id="tabIP">IP Webcam</button>
+      </div>
+
+      <div id="webcamPanel">
+        <label class="field">Device</label>
+        <select id="deviceSelect"><option>Default camera</option></select>
+        <button id="btnStartWebcam" class="primary">Start Webcam</button>
+      </div>
+
+      <div id="ipPanel" style="display:none;">
+        <label class="field">Stream URL</label>
+        <input id="ipUrl" type="text" placeholder="http://192.168.1.23:8080/video" />
+        <div class="hint">
+          Works with the Android "IP Webcam" app (use the <code>/video</code> MJPEG endpoint)
+          or any RTSP/HTTP stream reachable from this server, e.g.
+          <code>rtsp://user:pass@192.168.1.23:554/stream</code>.
+        </div>
+        <button id="btnStartIP" class="primary">Connect</button>
+      </div>
+
+      <button id="btnStop" class="secondary" disabled>Stop</button>
+    </div>
+
+    <div class="panel">
+      <h2>Model</h2>
+      <label class="field">RTMPose size</label>
+      <select id="modelSelect">
+        <option value="lightweight">Lightweight (fastest)</option>
+        <option value="balanced" selected>Balanced</option>
+        <option value="performance">Performance (most accurate)</option>
+      </select>
+
+      <label class="field">Keypoint confidence: <span id="kptThrVal">0.30</span></label>
+      <input id="kptThr" type="range" min="0" max="0.9" step="0.05" value="0.3" />
+
+      <div class="row" style="margin-top:14px;">
+        <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted);">
+          <input id="serverDraw" type="checkbox" checked style="width:auto;" />
+          Draw overlay server-side (IP mode)
+        </label>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Live Stats</h2>
+      <div class="kv"><span>People detected</span><b id="statPeople">0</b></div>
+      <div class="kv"><span>Inference time</span><b id="statInfer">–</b></div>
+      <div class="kv"><span>FPS</span><b id="statFps">–</b></div>
+    </div>
+  </div>
+
+  <div>
+    <div class="stage" id="stage">
+      <div class="placeholder" id="placeholder">Choose a camera source and press Start.</div>
+      <video id="video" autoplay playsinline muted style="display:none;"></video>
+      <img id="ipImage" style="display:none;" />
+      <canvas id="overlay"></canvas>
+      <div class="hud">
+        <div class="chip">Mode: <b id="hudMode">idle</b></div>
+        <div class="chip">FPS: <b id="hudFps">–</b></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+const state = {
+  ws: null,
+  mode: null, // 'webcam' | 'ip'
+  stream: null,
+  sendLoopHandle: null,
+  lastKeypoints: null,
+  lastSkeleton: null,
+  lastScores: null,
+  kptThr: 0.3,
+  fpsWindow: [],
+};
+
+const video = $("video");
+const ipImage = $("ipImage");
+const overlay = $("overlay");
+const ctx = overlay.getContext("2d");
+const placeholder = $("placeholder");
+const statusPill = $("statusPill");
+
+function setStatus(connected) {
+  statusPill.textContent = connected ? "connected" : "disconnected";
+  statusPill.className = "status-pill " + (connected ? "connected" : "disconnected");
+}
+
+function ensureWS() {
+  if (state.ws && state.ws.readyState === WebSocket.OPEN) return Promise.resolve(state.ws);
+  return new Promise((resolve, reject) => {
+    const proto = location.protocol === "https:" ? "wss" : "ws";
+    const ws = new WebSocket(`${proto}://${location.host}/ws/pose`);
+    ws.onopen = () => {
+      setStatus(true);
+      ws.send(JSON.stringify({ type: "config", kpt_thr: state.kptThr, model: $("modelSelect").value }));
+      resolve(ws);
+    };
+    ws.onclose = () => setStatus(false);
+    ws.onerror = (e) => reject(e);
+    ws.onmessage = handleMessage;
+    state.ws = ws;
+  });
+}
+
+function handleMessage(evt) {
+  const msg = JSON.parse(evt.data);
+  if (msg.type === "keypoints") {
+    state.lastKeypoints = msg.keypoints;
+    state.lastScores = msg.scores;
+    state.lastSkeleton = msg.skeleton;
+    $("statInfer").textContent = msg.infer_ms + " ms";
+    $("statPeople").textContent = msg.keypoints.length;
+    drawWebcamOverlay();
+    tickFps();
+    if (state.onKeypoints) state.onKeypoints();
+  } else if (msg.type === "annotated_frame") {
+    ipImage.src = msg.image;
+    $("statPeople").textContent = msg.num_people;
+    $("statFps").textContent = msg.fps;
+    $("hudFps").textContent = msg.fps;
+  } else if (msg.type === "error") {
+    console.error("server error:", msg.message);
+  }
+}
+
+function tickFps() {
+  const now = performance.now();
+  state.fpsWindow.push(now);
+  while (state.fpsWindow.length && now - state.fpsWindow[0] > 1000) state.fpsWindow.shift();
+  const fps = state.fpsWindow.length;
+  $("statFps").textContent = fps;
+  $("hudFps").textContent = fps;
+}
+
+function resizeCanvasToVideo(el) {
+  const rect = el.getBoundingClientRect();
+  overlay.width = rect.width;
+  overlay.height = rect.height;
+}
+
+const SKELETON_COLOR = "#5eead4";
+const POINT_COLOR = "#7c9dff";
+
+function drawWebcamOverlay() {
+  if (!video.videoWidth) return;
+  resizeCanvasToVideo(video);
+  ctx.clearRect(0, 0, overlay.width, overlay.height);
+  if (!state.lastKeypoints) return;
+
+  // map source video pixel coords -> displayed (object-fit: contain) coords
+  const vw = video.videoWidth, vh = video.videoHeight;
+  const scale = Math.min(overlay.width / vw, overlay.height / vh);
+  const offX = (overlay.width - vw * scale) / 2;
+  const offY = (overlay.height - vh * scale) / 2;
+  const map = (x, y) => [offX + x * scale, offY + y * scale];
+
+  state.lastKeypoints.forEach((kps, personIdx) => {
+    const scores = state.lastScores[personIdx];
+    ctx.strokeStyle = SKELETON_COLOR;
+    ctx.lineWidth = 2;
+    (state.lastSkeleton || []).forEach(([a, b]) => {
+      if (scores[a] < state.kptThr || scores[b] < state.kptThr) return;
+      const [x1, y1] = map(kps[a][0], kps[a][1]);
+      const [x2, y2] = map(kps[b][0], kps[b][1]);
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+    });
+    ctx.fillStyle = POINT_COLOR;
+    kps.forEach((pt, i) => {
+      if (scores[i] < state.kptThr) return;
+      const [x, y] = map(pt[0], pt[1]);
+      ctx.beginPath();
+      ctx.arc(x, y, 3, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  });
+}
+
+async function listDevices() {
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const cams = devices.filter((d) => d.kind === "videoinput");
+    const sel = $("deviceSelect");
+    sel.innerHTML = "";
+    if (cams.length === 0) {
+      sel.innerHTML = "<option>Default camera</option>";
+      return;
+    }
+    cams.forEach((c, i) => {
+      const opt = document.createElement("option");
+      opt.value = c.deviceId;
+      opt.textContent = c.label || `Camera ${i + 1}`;
+      sel.appendChild(opt);
+    });
+  } catch (e) {
+    console.warn("enumerateDevices failed", e);
+  }
+}
+
+async function startWebcam() {
+  stopAll();
+  placeholder.style.display = "none";
+  video.style.display = "block";
+  ipImage.style.display = "none";
+  $("hudMode").textContent = "webcam";
+
+  const deviceId = $("deviceSelect").value;
+  const constraints = { video: deviceId && deviceId !== "Default camera"
+    ? { deviceId: { exact: deviceId } } : true, audio: false };
+  state.stream = await navigator.mediaDevices.getUserMedia(constraints);
+  video.srcObject = state.stream;
+  await video.play();
+  await listDevices(); // labels populate only after permission grant
+
+  await ensureWS();
+  state.mode = "webcam";
+
+  const sendCanvas = document.createElement("canvas");
+  const sctx = sendCanvas.getContext("2d");
+  const MAX_SEND_DIM = 640; // downscale before encoding: much faster JPEG encode + inference
+  state.streaming = true;
+
+  const sendNextFrame = () => {
+    if (!state.streaming || !video.videoWidth || !state.ws || state.ws.readyState !== WebSocket.OPEN) return;
+    const scale = Math.min(1, MAX_SEND_DIM / Math.max(video.videoWidth, video.videoHeight));
+    sendCanvas.width = Math.round(video.videoWidth * scale);
+    sendCanvas.height = Math.round(video.videoHeight * scale);
+    sctx.drawImage(video, 0, 0, sendCanvas.width, sendCanvas.height);
+    const dataUrl = sendCanvas.toDataURL("image/jpeg", 0.6);
+    state.ws.send(JSON.stringify({ type: "frame", image: dataUrl }));
+  };
+
+  // Paced by the server's response, not a fixed timer: each frame is sent
+  // only once the previous one has been processed, so frames never pile up
+  // faster than the server can handle them (which is what causes latency
+  // to drift upward over time instead of staying low and constant).
+  state.onKeypoints = () => { if (state.streaming) sendNextFrame(); };
+  sendNextFrame();
+
+  $("btnStop").disabled = false;
+}
+
+async function startIP() {
+  stopAll();
+  const url = $("ipUrl").value.trim();
+  if (!url) { alert("Enter an IP webcam stream URL first."); return; }
+
+  placeholder.style.display = "none";
+  video.style.display = "none";
+  ipImage.style.display = "block";
+  overlay.style.display = "none"; // server draws the overlay into the frame itself
+  $("hudMode").textContent = "ip webcam";
+
+  await ensureWS();
+  state.mode = "ip";
+  state.ws.send(JSON.stringify({
+    type: "start_ip",
+    url,
+    draw: $("serverDraw").checked,
+  }));
+  $("btnStop").disabled = false;
+}
+
+function stopAll() {
+  state.streaming = false;
+  state.onKeypoints = null;
+  if (state.stream) { state.stream.getTracks().forEach((t) => t.stop()); state.stream = null; }
+  if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+    state.ws.send(JSON.stringify({ type: "stop" }));
+  }
+  overlay.style.display = "block";
+  ctx.clearRect(0, 0, overlay.width, overlay.height);
+  state.lastKeypoints = null;
+  video.style.display = "none";
+  ipImage.style.display = "none";
+  placeholder.style.display = "block";
+  $("hudMode").textContent = "idle";
+  $("hudFps").textContent = "–";
+  $("statFps").textContent = "–";
+  $("statInfer").textContent = "–";
+  $("statPeople").textContent = "0";
+  $("btnStop").disabled = true;
+  state.mode = null;
+}
+
+// --- wiring ---
+$("tabWebcam").onclick = () => {
+  $("tabWebcam").classList.add("active");
+  $("tabIP").classList.remove("active");
+  $("webcamPanel").style.display = "block";
+  $("ipPanel").style.display = "none";
+};
+$("tabIP").onclick = () => {
+  $("tabIP").classList.add("active");
+  $("tabWebcam").classList.remove("active");
+  $("ipPanel").style.display = "block";
+  $("webcamPanel").style.display = "none";
+};
+$("btnStartWebcam").onclick = () => startWebcam().catch((e) => alert("Camera error: " + e.message));
+$("btnStartIP").onclick = () => startIP().catch((e) => alert("IP webcam error: " + e.message));
+$("btnStop").onclick = stopAll;
+
+$("kptThr").oninput = (e) => {
+  state.kptThr = parseFloat(e.target.value);
+  $("kptThrVal").textContent = state.kptThr.toFixed(2);
+  if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+    state.ws.send(JSON.stringify({ type: "config", kpt_thr: state.kptThr }));
+  }
+};
+$("modelSelect").onchange = (e) => {
+  if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+    state.ws.send(JSON.stringify({ type: "config", model: e.target.value, kpt_thr: state.kptThr }));
+  }
+};
+
+window.addEventListener("resize", () => { if (video.videoWidth) resizeCanvasToVideo(video); });
+
+navigator.mediaDevices?.enumerateDevices().then(() => listDevices());
+</script>
+</body>
+</html>

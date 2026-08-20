@@ -1,0 +1,12 @@
+fastapi
+uvicorn[standard]
+opencv-python-headless
+numpy
+rtmlib
+onnxruntime-gpu
+nvidia-cudnn-cu12
+nvidia-cublas-cu12
+nvidia-cuda-runtime-cu12
+nvidia-cuda-nvrtc-cu12
+nvidia-curand-cu12
+nvidia-cufft-cu12

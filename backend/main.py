@@ -20,6 +20,8 @@ OpenMMLab's mmpose / RTMPose models):
 """
 from __future__ import annotations
 
+import os
+
 import asyncio
 import base64
 import json
@@ -245,4 +247,4 @@ async def ws_pose(websocket: WebSocket) -> None:
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host=os.environ.get("HOST", "127.0.0.1"), port=8000)
